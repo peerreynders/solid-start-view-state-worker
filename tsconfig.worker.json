@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2022", "webworker", "webworker.iterable"],
+    "target": "ES2017",
+    "module": "ES2015",
+    "moduleResolution": "node",
+    "declaration": true,
+    "esModuleInterop": true,
+    "strict": true
+  },
+  "include": ["src/worker/**/*"]
+}
