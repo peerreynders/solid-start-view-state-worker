@@ -25,16 +25,25 @@ function toNumber(text: string) {
 	return typeof value === 'number' ? value : undefined;
 }
 
+function putState(href: string, state: State) {
+	return fetch(href, {
+		method: 'PUT',
+		body: JSON.stringify(state),
+	});
+}
+
 type Request = Exclude<WorkerBound, Initialize>;
 
 class Handler {
 	postMessage: (message: ViewBound) => void;
+	apiHref: string;
 	multiplicand: number | undefined;
 	multiplier: number | undefined;
 	state: State | undefined;
 
-	constructor(postMessage: (message: ViewBound) => void) {
+	constructor(postMessage: (message: ViewBound) => void, apiHref: string) {
 		this.postMessage = postMessage;
+		this.apiHref = apiHref;
 	}
 
 	handleEvent(event: Event) {
@@ -123,6 +132,8 @@ class Handler {
 			id,
 			patch,
 		});
+
+		putState(this.apiHref, state);
 	}
 
 	postError(state: State, id: string, error: string) {
@@ -137,11 +148,14 @@ class Handler {
 	}
 }
 
+const API_PATHNAME = '/api/state';
+
 (async function start() {
 	isWorker(self);
 
-	const handler = new Handler((message: ViewBound) =>
-		self.postMessage(message)
+	const handler = new Handler(
+		(message: ViewBound) => self.postMessage(message),
+		self.location.origin + API_PATHNAME
 	);
 
 	// Try not to miss any requests
