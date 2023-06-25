@@ -1,3 +1,4 @@
+// file: src/lib/message.ts
 import type { State, ViewModel } from './core';
 
 export type Initialize = {

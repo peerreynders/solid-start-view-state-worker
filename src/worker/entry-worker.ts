@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+// file: src/worker/entry-worker.ts
 
 import type { State } from '../lib/core';
 import type { ViewBound, WorkerBound, Initialize } from '../lib/messages';

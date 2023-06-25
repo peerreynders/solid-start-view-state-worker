@@ -1,3 +1,5 @@
+// file: src/components/view-state-context.tsx
+
 import {
 	batch,
 	createContext,
@@ -72,7 +74,7 @@ function makeViewStateHolder() {
 	const [multiplicand, setMultiplicand] = createSignal('0');
 	const [multiplier, setMultiplier] = createSignal('0');
 	const [product, setProduct] = createSignal(0);
-	const [error, setError] = createSignal<string>();
+	const [error, setError] = createSignal<string | undefined>();
 
 	const viewState: {
 		multiplicand: Accessor<string>;
