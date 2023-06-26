@@ -1,3 +1,5 @@
+// file: src/lib/core.ts
+
 export type State = {
 	multiplicand: string;
 	multiplier: string;
@@ -6,8 +8,6 @@ export type State = {
 };
 
 export type ViewModel = State;
-
-export type Update = Partial<ViewModel>;
 
 function stateToViewModel(state: State) {
 	return state as ViewModel;

@@ -14,18 +14,10 @@ export type OperandUpdate = {
 
 export type WorkerBound = Initialize | OperandUpdate;
 
-type PatchTuple<T, K extends keyof T> = [K, T[K]];
-
-export type Patch =
-	| PatchTuple<ViewModel, 'multiplicand'>
-	| PatchTuple<ViewModel, 'multiplier'>
-	| PatchTuple<ViewModel, 'product'>
-	| PatchTuple<ViewModel, 'error'>;
-
 export type ViewPatch = {
 	kind: 'view-patch';
 	id: string;
-	patches: Patch[];
+	patch: Partial<ViewModel>;
 };
 
 export type ViewBound = ViewPatch;

@@ -14,7 +14,7 @@ import {
 	Title,
 } from 'solid-start';
 
-import { ViewStoreProvider } from './components/view-store-context';
+import { ViewStateProvider } from './components/view-state-context';
 import {
 	fromAppJson,
 	fromServer,
@@ -35,11 +35,11 @@ export default function Root() {
 			<Body>
 				<Suspense>
 					<ErrorBoundary>
-						<ViewStoreProvider state={state}>
+						<ViewStateProvider state={state}>
 							<Routes>
 								<FileRoutes />
 							</Routes>
-						</ViewStoreProvider>
+						</ViewStateProvider>
 					</ErrorBoundary>
 				</Suspense>
 				<Scripts />

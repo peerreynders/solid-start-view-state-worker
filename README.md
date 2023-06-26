@@ -199,3 +199,171 @@ const viewResult = ({ error, product }: ViewState) => {
 };
 
 ```
+
+In this simple case each primitive value was represented by it's own signal. 
+
+Does this scale to a regular size application? 
+
+### Using Stores
+
+The `viewState` can consist of one or more [stores](https://www.solidjs.com/docs/latest/api#using-stores) perhaps even mixed with some signals. 
+
+Stores also support "nested setting" where a path and a new value is used to update the store, so the worker could simply send a list of patches instead of the entire store state. 
+
+Consider the following:
+
+```TypeScript
+// file: src/lib/message.ts
+
+// …
+
+type PatchTuple<T, K extends keyof T> = [K, T[K]];
+
+export type Patch =
+  | PatchTuple<ViewModel, 'multiplicand'>
+  | PatchTuple<ViewModel, 'multiplier'>
+  | PatchTuple<ViewModel, 'product'>
+  | PatchTuple<ViewModel, 'error'>;
+
+export type ViewPatch = {
+  kind: 'view-patch';
+  id: string;
+  patches: Patch[];
+};
+```
+`Patch` is a union of all the supported updates to the store and `ViewPatch` (`ViewBound`) message now carries an array of `Patch`es instead of a `Partial<ViewModel>`
+
+```TypeScript
+// file: src/components/view-store-context.tsx
+
+// …
+
+type Holder = {
+  setModel: (...patch: Patch) => void;
+  view: {
+    model: Store<ViewModel>;
+    setMultiplicand: (value: string) => void;
+    setMultiplier: (value: string) => void;
+  };
+};
+
+function makeContext(state: State) {
+  // Extract the values necessary for the view
+  const [model, setModel] = createStore(stateToViewModel(state));
+  const holder: Holder = {
+    setModel,
+    view: {
+      model,
+      setMultiplicand: worker
+        ? worker.setMultiplicand
+        : (value: string) => setModel('multiplicand', value),
+      setMultiplier: worker
+        ? worker.setMultiplier
+        : (value: string) => setModel('multiplier', value),
+    },
+  };
+
+  const tuple: [Holder, Context<Holder['view']>] = [
+    holder,
+    createContext(holder.view),
+  ];
+  return tuple;
+}
+
+let holder: Holder | undefined;
+let ViewStoreContext: Context<Holder['view']> | undefined;
+```
+
+The individual signals have now been replaced with `holder.view.model`.
+
+```TypeScript
+// file: src/components/view-store-context.tsx
+
+// …
+
+function ViewStoreProvider(props: Props) {
+  const state = JSON.parse(props.state) as State;
+  [holder, ViewStoreContext] = makeContext(state);
+
+  if (worker) worker.register(holder.setModel, state);
+
+  return (
+    <ViewStoreContext.Provider value={holder.view}>
+      {props.children}
+    </ViewStoreContext.Provider>
+  );
+}
+```
+
+Now `holder.view.model` is updated by applying all `Patch` tuples delivered by a `ViewPatch` message (`model.error` is deleted when it isn't explicitly set).
+
+```
+// file: src/components/view-store-context.tsx
+
+// …
+
+handler = (event: MessageEvent<ViewBound>) => {
+  if (event.data.kind === 'view-patch') {
+    const patches: Patch[] = event.data.patches;
+    batch(() => {
+      let clearError = true;
+      for (const patch of patches) {
+        setModel(...patch);
+        if (patch[0] === 'error') clearError = false;
+      }
+      if (clearError) setModel('error', undefined);
+    });
+    return;
+  }
+};
+```
+
+In the page `view.model` is consumed as follows:
+
+```TypeScript
+// file: src/routes/index.tsx
+
+// …
+
+type View = ReturnType<typeof useViewStore>;
+
+const viewResult = ({ model }: View) => {
+  const errorText = model.error;
+  return errorText ? errorText : `Result: ${model.product}`;
+};
+
+export default function Home() {
+  const view = useViewStore();
+  const dispatch = {
+    ['number1']: view.setMultiplicand,
+    ['number2']: view.setMultiplier,
+  };
+  const setOperand = (event: InputEvent) => {
+    if (!(event.target instanceof HTMLInputElement)) return;
+
+    const id = event.target.id;
+    if (hasOwn(dispatch, id)) dispatch[id](event.target.value);
+
+    event.stopPropagation();
+  };
+
+  return (
+    <>
+      {/* … */}
+      <form onInput={setOperand}>
+        {/* … */}
+        <input type="text" id="number1" value={view.model.multiplicand} />
+        {/* … */}
+        <input type="text" id="number2" value={view.model.multiplier} />
+        {/* … */}
+      </form>
+      <p class="result">{viewResult(view)}</p>
+      {/* … */}
+    </>
+  );
+}
+```
+
+## State Walktrough
+
+To be continued…

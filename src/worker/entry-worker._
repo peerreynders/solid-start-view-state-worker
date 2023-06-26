@@ -2,12 +2,7 @@
 // file: src/worker/entry-worker.ts
 
 import type { State } from '../lib/core';
-import type {
-	ViewBound,
-	WorkerBound,
-	Initialize,
-	Patch,
-} from '../lib/messages';
+import type { ViewBound, WorkerBound, Initialize } from '../lib/messages';
 
 function isWorker(value: unknown): asserts value is DedicatedWorkerGlobalScope {
 	let record =
@@ -122,21 +117,21 @@ class Handler {
 		state.product = this.multiplicand * this.multiplier;
 		state.error = undefined;
 
-		const patches: Patch[] =
+		const patch =
 			kind === 'multiplicand-update'
-				? [
-						['multiplicand', state.multiplicand],
-						['product', state.product],
-				  ]
-				: [
-						['multiplier', state.multiplier],
-						['product', state.product],
-				  ];
+				? {
+						multiplicand: state.multiplicand,
+						product: state.product,
+				  }
+				: {
+						multiplier: state.multiplier,
+						product: state.product,
+				  };
 
 		this.postMessage({
 			kind: 'view-patch',
 			id,
-			patches,
+			patch,
 		});
 
 		putState(this.apiHref, state);
@@ -147,7 +142,9 @@ class Handler {
 		this.postMessage({
 			kind: 'view-patch',
 			id,
-			patches: [['error', error]],
+			patch: {
+				error,
+			},
 		});
 	}
 }
