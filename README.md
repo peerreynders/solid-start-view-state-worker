@@ -206,7 +206,7 @@ Does this scale to a regular size application?
 
 ### Using Stores
 
-The `viewState` can consist of one or more [stores](https://www.solidjs.com/docs/latest/api#using-stores) perhaps even mixed with some signals. 
+The `View` can consist of one or more [stores](https://www.solidjs.com/docs/latest/api#using-stores) perhaps even mixed with some signals. 
 
 Stores also support "nested setting" where a path and a new value is used to update the store, so the worker could simply send a list of patches instead of the entire store state. 
 
@@ -366,4 +366,243 @@ export default function Home() {
 
 ## State Walktrough
 
-To be continued…
+The state starts in the server's `repo`; here just represented by a server side in-memory value.
+
+``` TypeScript
+// file: src/server/repo.ts
+
+import type { State } from '~/lib/core';
+
+const serverSideState: State = {
+  multiplicand: '6',
+  multiplier: '7',
+  product: 42,
+  error: undefined,
+};
+
+const selectState = () => serverSideState;
+
+const updateState = (state: State) => Object.assign(serverSideState, state);
+
+export { selectState, updateState };
+```
+
+Server side the state is accessed with `fromServer()`.
+
+```TypeScript
+// file: src/components/worker-state.tsx
+
+// …
+
+// --- START server side ---
+import { selectState } from '~/server/repo';
+
+const fromServer = () => JSON.stringify(selectState());
+
+// --- END server side ---
+```
+
+During SSR `fromServer()` obtains the state from the server
+and feeds it both into `ViewStoreProvider` and `WorkerState`.
+
+```TypeScript
+// file: src/root.tsx
+
+// …
+
+export default function Root() {
+  const state = isServer ? fromServer() : fromAppJson(document);
+
+  return (
+    <Html lang="en">
+      {/* … */}
+      <Body>
+        <Suspense>
+          <ErrorBoundary>
+            <ViewStoreProvider state={state}>
+              <Routes>
+                <FileRoutes />
+              </Routes>
+            </ViewStoreProvider>
+          </ErrorBoundary>
+        </Suspense>
+        <Scripts />
+        <WorkerState state={state} />
+      </Body>
+    </Html>
+  );
+}
+```
+
+`WorkerState` renders its prop as an [embedded data block](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/script#embedding_data_in_html);
+
+```TypeScript
+// file: src/components/worker-state.tsx
+
+// …
+
+function WorkerState(props: Props) {
+  return (
+    <Show when={isServer}>
+      <script id={APP_JSON_ID} type="application/json">
+        {props.state}
+      </script>
+    </Show>
+  );
+}
+```
+
+Client side the state is extracted from the server rendered DOM with `fromAppJson()` … 
+
+```TypeScript
+// file: src/components/worker-state.tsx
+
+// …
+
+const APP_JSON_ID = 'worker-state';
+
+interface Root {
+  getElementById(elementId: string): HTMLElement | null;
+}
+
+function fromAppJson(root: Root) {
+  const json = root.getElementById(APP_JSON_ID)?.textContent?.trim();
+  return !json || json.length < 1
+    ? '{"multiplicand":"0","multiplier":"0","product":0,"error":"Unable to reconstitute view state"}'
+    : json;
+}
+```
+
+… and then passed to `ViewStoreProvider` …
+
+```TypeScript
+// file: src/components/view-store-context.tsx
+
+// …
+
+export type Props = ParentProps & {
+  state: string;
+};
+
+function ViewStoreProvider(props: Props) {
+  const state = JSON.parse(props.state) as State;
+  [holder, ViewStoreContext] = makeContext(state);
+
+  if (worker) worker.register(holder.setModel, state);
+
+  return (
+    <ViewStoreContext.Provider value={holder.view}>
+      {props.children}
+    </ViewStoreContext.Provider>
+  );
+}
+```
+
+… which then posts it to the `Worker` … 
+
+```TypeScript
+// file: src/components/view-store-context.tsx
+
+// …
+
+const register = (setModel: (...patch: Patch) => void, state: State) => {
+  // …
+  worker.addEventListener('message', handler);
+  worker.postMessage(makeInitialize(state));
+};
+```
+
+… to initialize itself.
+
+```TypeScript
+// file: src/worker/entry-worker.ts
+
+// …
+
+class Handler {
+  // …
+  handleEvent(event: Event) {
+    if (event.type !== 'message') return;
+    const message = (event as MessageEvent<WorkerBound>).data;
+
+    if (this.state && message.kind !== 'initialize')
+      this.handleRequest(this.state, message);
+    else if (!this.state && message.kind === 'initialize') {
+      this.state = message.state;
+      // set intermediate values
+      this.multiplicand = toNumber(this.state.multiplicand);
+      this.multiplier = toNumber(this.state.multiplier);
+    }
+  }
+}
+```
+
+Whenever the `Worker` calculates a new `product` it `PUT`s the most recent state back to the server …
+
+```TypeScript
+// file: src/worker/entry-worker.ts
+
+// …
+
+function putState(href: string, state: State) {
+	return fetch(href, {
+		method: 'PUT',
+		body: JSON.stringify(state),
+	});
+}
+```
+
+… via the `/api/state` [API route](https://start.solidjs.com/core-concepts/api-routes).
+
+```
+// file: src/state/api/state
+import { ServerError } from 'solid-start';
+import { APIEvent } from 'solid-start/api';
+import { updateState } from '~/server/repo';
+import type { State } from '~/lib/core';
+
+function isState(state: unknown): state is State {
+  return (
+    !!state &&
+    typeof state === 'object' &&
+    'multiplicand' in state &&
+    typeof state.multiplicand === 'string' &&
+    'multiplier' in state &&
+    typeof state.multiplier === 'string' &&
+    'product' in state &&
+    typeof state.product === 'number' &&
+    (('error' in state &&
+      typeof state.error === 'string' &&
+      Object.keys(state).length === 4) ||
+      (!('error' in state) && Object.keys(state).length === 3))
+  );
+}
+
+async function fromBody(stream: ReadableStream<Uint8Array> | null) {
+  let payload = '';
+  if (!stream) return undefined;
+
+  const utf8Decoder = new TextDecoder();
+  for (const reader = stream.getReader(); ; ) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    payload += utf8Decoder.decode(value);
+  }
+
+  if (payload.length < 1) return undefined;
+
+  const data = JSON.parse(payload);
+  return isState(data) ? data : undefined;
+}
+
+async function PUT(event: APIEvent) {
+  const state = await fromBody(event.request.body);
+  if (!state) throw new ServerError('Illegal State Type');
+  updateState(state);
+
+  return new Response(null, { status: 204, statusText: 'No Content' });
+}
+
+export { PUT };
+```

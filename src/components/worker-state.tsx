@@ -1,3 +1,5 @@
+// file: src/components/worker-state.tsx
+
 import { Show } from 'solid-js';
 import { isServer } from 'solid-js/web';
 

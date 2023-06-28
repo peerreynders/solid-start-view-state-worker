@@ -1,4 +1,5 @@
 // @refresh reload
+// file: src/root.tsx
 import { Suspense } from 'solid-js';
 import { isServer } from 'solid-js/web';
 import {

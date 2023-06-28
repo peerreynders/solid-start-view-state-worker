@@ -1,4 +1,4 @@
-// file: src/api/state
+// file: src/state/api/state
 import { ServerError } from 'solid-start';
 import { APIEvent } from 'solid-start/api';
 import { updateState } from '~/server/repo';
